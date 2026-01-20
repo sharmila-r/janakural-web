@@ -1,10 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { getAllIssues, updateIssueStatus } from '@/services/admin';
+import {
+  getAllIssues,
+  updateIssueStatus,
+  assignIssue,
+  addResolutionNotes,
+  uploadAfterPhoto,
+  addAfterPhotos,
+  getActiveAgents,
+  exportIssuesToCSV,
+  AdminUser,
+} from '@/services/admin';
 import { Issue, IssueStatus } from '@/types';
 import { CATEGORIES } from '@/lib/constants';
 
@@ -28,12 +38,21 @@ const statusOptions: { value: IssueStatus; label: string }[] = [
 
 export default function AdminIssuesPage() {
   const router = useRouter();
-  const { user, isAdmin, loading } = useAuth();
+  const { user, adminUser, isAdmin, loading } = useAuth();
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [agents, setAgents] = useState<AdminUser[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(true);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const [districtFilter, setDistrictFilter] = useState<string>('all');
   const [updating, setUpdating] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Get unique districts from issues
+  const districts = Array.from(new Set(issues.map(i => i.location?.district).filter(Boolean)));
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
@@ -42,30 +61,51 @@ export default function AdminIssuesPage() {
   }, [user, isAdmin, loading, router]);
 
   useEffect(() => {
-    async function fetchIssues() {
+    async function fetchData() {
       try {
-        const data = await getAllIssues();
-        setIssues(data);
+        const [issuesData, agentsData] = await Promise.all([
+          getAllIssues(),
+          getActiveAgents(),
+        ]);
+        setIssues(issuesData);
+        setAgents(agentsData);
       } catch (error) {
-        console.error('Error fetching issues:', error);
+        console.error('Error fetching data:', error);
       } finally {
         setIssuesLoading(false);
       }
     }
     if (isAdmin) {
-      fetchIssues();
+      fetchData();
     }
   }, [isAdmin]);
+
+  // Update notes when selecting a new issue
+  useEffect(() => {
+    if (selectedIssue) {
+      setNotes(selectedIssue.resolutionNotes || '');
+      setSelectedAgent(selectedIssue.assignedTo || '');
+    }
+  }, [selectedIssue]);
 
   const handleStatusChange = async (issueId: string, newStatus: IssueStatus) => {
     setUpdating(true);
     try {
-      await updateIssueStatus(issueId, newStatus);
+      await updateIssueStatus(issueId, newStatus, {
+        notes: notes || undefined,
+        resolvedBy: newStatus === 'resolved' ? adminUser?.phone : undefined,
+      });
+      const updatedIssue = {
+        ...issues.find(i => i.id === issueId)!,
+        status: newStatus,
+        resolutionNotes: notes || undefined,
+        resolvedAt: newStatus === 'resolved' ? new Date() : undefined,
+      };
       setIssues(issues.map(issue =>
-        issue.id === issueId ? { ...issue, status: newStatus } : issue
+        issue.id === issueId ? updatedIssue : issue
       ));
       if (selectedIssue?.id === issueId) {
-        setSelectedIssue({ ...selectedIssue, status: newStatus });
+        setSelectedIssue(updatedIssue);
       }
     } catch (error) {
       console.error('Error updating status:', error);
@@ -75,14 +115,111 @@ export default function AdminIssuesPage() {
     }
   };
 
+  const handleAssign = async () => {
+    if (!selectedIssue || !selectedAgent) return;
+    setUpdating(true);
+    try {
+      await assignIssue(selectedIssue.id, selectedAgent, adminUser?.phone || '');
+      const updatedIssue = {
+        ...selectedIssue,
+        assignedTo: selectedAgent,
+        assignedBy: adminUser?.phone,
+        status: 'assigned' as IssueStatus,
+      };
+      setIssues(issues.map(issue =>
+        issue.id === selectedIssue.id ? updatedIssue : issue
+      ));
+      setSelectedIssue(updatedIssue);
+    } catch (error) {
+      console.error('Error assigning issue:', error);
+      alert('Failed to assign issue');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    if (!selectedIssue) return;
+    setUpdating(true);
+    try {
+      await addResolutionNotes(selectedIssue.id, notes);
+      const updatedIssue = { ...selectedIssue, resolutionNotes: notes };
+      setIssues(issues.map(issue =>
+        issue.id === selectedIssue.id ? updatedIssue : issue
+      ));
+      setSelectedIssue(updatedIssue);
+      alert('Notes saved');
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      alert('Failed to save notes');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedIssue || !e.target.files?.length) return;
+    setUploadingPhotos(true);
+    try {
+      const files = Array.from(e.target.files);
+      const uploadedUrls: string[] = [...(selectedIssue.afterPhotos || [])];
+
+      for (let i = 0; i < files.length; i++) {
+        const url = await uploadAfterPhoto(selectedIssue.id, files[i], uploadedUrls.length + i);
+        uploadedUrls.push(url);
+      }
+
+      await addAfterPhotos(selectedIssue.id, uploadedUrls);
+      const updatedIssue = { ...selectedIssue, afterPhotos: uploadedUrls };
+      setIssues(issues.map(issue =>
+        issue.id === selectedIssue.id ? updatedIssue : issue
+      ));
+      setSelectedIssue(updatedIssue);
+    } catch (error) {
+      console.error('Error uploading photos:', error);
+      alert('Failed to upload photos');
+    } finally {
+      setUploadingPhotos(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleExportCSV = () => {
+    const csv = exportIssuesToCSV(filteredIssues);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `janakural-issues-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const filteredIssues = issues.filter(issue => {
-    if (filter === 'all') return true;
-    if (filter === 'pending') return ['submitted', 'assigned', 'in_progress'].includes(issue.status);
-    return issue.status === filter;
+    // Status filter
+    if (filter !== 'all') {
+      if (filter === 'pending' && !['submitted', 'assigned', 'in_progress'].includes(issue.status)) {
+        return false;
+      } else if (filter !== 'pending' && issue.status !== filter) {
+        return false;
+      }
+    }
+    // District filter
+    if (districtFilter !== 'all' && issue.location?.district !== districtFilter) {
+      return false;
+    }
+    return true;
   });
 
   const getCategoryName = (categoryId: string) => {
     return CATEGORIES.find(c => c.id === categoryId)?.nameEn || categoryId;
+  };
+
+  const getAgentName = (phone: string) => {
+    const agent = agents.find(a => a.phone === phone);
+    return agent?.name || phone;
   };
 
   const formatDate = (date: Date) => {
@@ -116,26 +253,54 @@ export default function AdminIssuesPage() {
             </Link>
             <h1 className="font-bold text-gray-900">Manage Issues</h1>
           </div>
-          <span className="text-sm text-gray-500">{filteredIssues.length} issues</span>
+          <div className="flex items-center space-x-3">
+            <span className="text-sm text-gray-500">{filteredIssues.length} issues</span>
+            <button
+              onClick={handleExportCSV}
+              className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-green-700 flex items-center space-x-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Export CSV</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Filters */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {['all', 'pending', 'submitted', 'in_progress', 'resolved'].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-full text-sm font-medium capitalize ${
-                filter === f
-                  ? 'bg-red-600 text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
+        <div className="flex flex-wrap items-center gap-4 mb-6">
+          {/* Status Filter */}
+          <div className="flex flex-wrap gap-2">
+            {['all', 'pending', 'submitted', 'in_progress', 'resolved'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-2 rounded-full text-sm font-medium capitalize ${
+                  filter === f
+                    ? 'bg-red-600 text-white'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {f === 'all' ? 'All' : f.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+
+          {/* District Filter */}
+          {districts.length > 0 && (
+            <select
+              value={districtFilter}
+              onChange={(e) => setDistrictFilter(e.target.value)}
+              className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm"
             >
-              {f === 'all' ? 'All' : f.replace('_', ' ')}
-            </button>
-          ))}
+              <option value="all">All Districts</option>
+              {districts.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {issuesLoading ? (
@@ -149,7 +314,7 @@ export default function AdminIssuesPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Issues List */}
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
               {filteredIssues.map((issue) => (
                 <div
                   key={issue.id}
@@ -165,8 +330,13 @@ export default function AdminIssuesPage() {
                     </span>
                   </div>
                   <p className="text-sm text-gray-500 mb-2">{getCategoryName(issue.category)}</p>
+                  {issue.assignedTo && (
+                    <p className="text-xs text-blue-600 mb-2">
+                      Assigned to: {getAgentName(issue.assignedTo)}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between text-xs text-gray-400">
-                    <span>{issue.submitterPhone}</span>
+                    <span>{issue.location?.district || issue.submitterPhone}</span>
                     <span>{formatDate(issue.createdAt)}</span>
                   </div>
                 </div>
@@ -175,7 +345,7 @@ export default function AdminIssuesPage() {
 
             {/* Issue Detail */}
             {selectedIssue && (
-              <div className="bg-white rounded-xl shadow p-6 sticky top-6 h-fit">
+              <div className="bg-white rounded-xl shadow p-6 sticky top-6 h-fit max-h-[calc(100vh-200px)] overflow-y-auto">
                 <div className="flex items-start justify-between mb-4">
                   <h2 className="text-xl font-bold text-gray-900">{selectedIssue.title}</h2>
                   <button
@@ -188,20 +358,58 @@ export default function AdminIssuesPage() {
                   </button>
                 </div>
 
-                {/* Photos */}
+                {/* Before Photos */}
                 {selectedIssue.beforePhotos.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Photos</p>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Before Photos</p>
                     <div className="grid grid-cols-2 gap-2">
                       {selectedIssue.beforePhotos.map((photo, idx) => (
                         <img
                           key={idx}
                           src={photo}
-                          alt={`Issue photo ${idx + 1}`}
-                          className="w-full h-32 object-cover rounded-lg"
+                          alt={`Before photo ${idx + 1}`}
+                          className="w-full h-32 object-cover rounded-lg cursor-pointer"
+                          onClick={() => window.open(photo, '_blank')}
                         />
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* After Photos */}
+                {(selectedIssue.afterPhotos?.length > 0 || selectedIssue.status === 'resolved') && (
+                  <div className="mb-4">
+                    <p className="text-sm font-medium text-gray-700 mb-2">After Photos (Proof of Resolution)</p>
+                    {selectedIssue.afterPhotos?.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        {selectedIssue.afterPhotos.map((photo, idx) => (
+                          <img
+                            key={idx}
+                            src={photo}
+                            alt={`After photo ${idx + 1}`}
+                            className="w-full h-32 object-cover rounded-lg cursor-pointer"
+                            onClick={() => window.open(photo, '_blank')}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 mb-2">No after photos uploaded</p>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingPhotos}
+                      className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                    >
+                      {uploadingPhotos ? 'Uploading...' : '+ Upload After Photos'}
+                    </button>
                   </div>
                 )}
 
@@ -218,6 +426,12 @@ export default function AdminIssuesPage() {
                   <div>
                     <p className="text-sm font-medium text-gray-700">Location</p>
                     <p className="text-gray-600">{selectedIssue.location.address || 'Not specified'}</p>
+                    {selectedIssue.location.district && (
+                      <p className="text-sm text-gray-500">
+                        {selectedIssue.location.district}
+                        {selectedIssue.location.constituency && ` • ${selectedIssue.location.constituency}`}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Submitted By</p>
@@ -227,6 +441,62 @@ export default function AdminIssuesPage() {
                     <p className="text-sm font-medium text-gray-700">Submitted On</p>
                     <p className="text-gray-600">{formatDate(selectedIssue.createdAt)}</p>
                   </div>
+                  {selectedIssue.resolvedAt && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Resolved On</p>
+                      <p className="text-gray-600">{formatDate(selectedIssue.resolvedAt)}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Assign Agent */}
+                <div className="border-t pt-4 mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Assign to Agent</p>
+                  <div className="flex space-x-2">
+                    <select
+                      value={selectedAgent}
+                      onChange={(e) => setSelectedAgent(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    >
+                      <option value="">Select agent...</option>
+                      {agents.map(agent => (
+                        <option key={agent.id} value={agent.phone}>
+                          {agent.name} ({agent.role.replace('_', ' ')})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleAssign}
+                      disabled={updating || !selectedAgent || selectedAgent === selectedIssue.assignedTo}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      Assign
+                    </button>
+                  </div>
+                  {selectedIssue.assignedTo && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Currently assigned to: {getAgentName(selectedIssue.assignedTo)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Resolution Notes */}
+                <div className="border-t pt-4 mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Resolution Notes</p>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Add notes about the resolution..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"
+                    rows={3}
+                  />
+                  <button
+                    onClick={handleSaveNotes}
+                    disabled={updating}
+                    className="mt-2 px-4 py-1 bg-gray-600 text-white rounded-lg text-sm hover:bg-gray-700 disabled:opacity-50"
+                  >
+                    Save Notes
+                  </button>
                 </div>
 
                 {/* Status Update */}

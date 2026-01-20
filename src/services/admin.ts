@@ -50,11 +50,16 @@ export async function getAllIssues(): Promise<Issue[]> {
   return issues;
 }
 
-// Update issue status
+// Update issue status with optional assignment and notes
 export async function updateIssueStatus(
   issueId: string,
   status: IssueStatus,
-  notes?: string
+  options?: {
+    notes?: string;
+    assignedTo?: string;
+    assignedBy?: string;
+    resolvedBy?: string;
+  }
 ): Promise<void> {
   const issueRef = doc(db, COLLECTIONS.ISSUES, issueId);
 
@@ -65,13 +70,50 @@ export async function updateIssueStatus(
 
   if (status === 'resolved') {
     updateData.resolvedAt = serverTimestamp();
+    if (options?.resolvedBy) {
+      updateData.resolvedBy = options.resolvedBy;
+    }
   }
 
-  if (notes) {
-    updateData.resolutionNotes = notes;
+  if (options?.notes) {
+    updateData.resolutionNotes = options.notes;
+  }
+
+  if (options?.assignedTo) {
+    updateData.assignedTo = options.assignedTo;
+    updateData.assignedBy = options.assignedBy;
   }
 
   await updateDoc(issueRef, updateData);
+}
+
+// Assign issue to agent
+export async function assignIssue(
+  issueId: string,
+  assignedTo: string,
+  assignedBy: string
+): Promise<void> {
+  const issueRef = doc(db, COLLECTIONS.ISSUES, issueId);
+
+  await updateDoc(issueRef, {
+    assignedTo,
+    assignedBy,
+    status: 'assigned',
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Add resolution notes
+export async function addResolutionNotes(
+  issueId: string,
+  notes: string
+): Promise<void> {
+  const issueRef = doc(db, COLLECTIONS.ISSUES, issueId);
+
+  await updateDoc(issueRef, {
+    resolutionNotes: notes,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // Upload after photo
@@ -195,4 +237,154 @@ export async function updateAdminUser(
 export async function deleteAdminUser(userId: string): Promise<void> {
   const userRef = doc(db, COLLECTIONS.USERS, userId);
   await deleteDoc(userRef);
+}
+
+// Get active agents (for assignment dropdown)
+export async function getActiveAgents(): Promise<AdminUser[]> {
+  const users = await getAllAdminUsers();
+  return users.filter(u => u.isActive);
+}
+
+// ============ Analytics ============
+
+export interface AnalyticsData {
+  totalIssues: number;
+  resolvedIssues: number;
+  pendingIssues: number;
+  rejectedIssues: number;
+  avgResolutionDays: number;
+  resolutionRate: number;
+  byCategory: Record<string, number>;
+  byStatus: Record<string, number>;
+  byDistrict: Record<string, number>;
+  byMonth: { month: string; submitted: number; resolved: number }[];
+  recentActivity: { date: string; count: number }[];
+}
+
+export async function getAnalytics(): Promise<AnalyticsData> {
+  const issues = await getAllIssues();
+
+  const totalIssues = issues.length;
+  const resolvedIssues = issues.filter(i => i.status === 'resolved' || i.status === 'closed').length;
+  const pendingIssues = issues.filter(i => ['submitted', 'assigned', 'in_progress'].includes(i.status)).length;
+  const rejectedIssues = issues.filter(i => i.status === 'rejected').length;
+
+  // Calculate average resolution time
+  const resolvedWithDates = issues.filter(i => i.resolvedAt && i.createdAt);
+  const avgResolutionDays = resolvedWithDates.length > 0
+    ? resolvedWithDates.reduce((acc, i) => {
+        const days = (i.resolvedAt!.getTime() - i.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+        return acc + days;
+      }, 0) / resolvedWithDates.length
+    : 0;
+
+  const resolutionRate = totalIssues > 0 ? Math.round((resolvedIssues / totalIssues) * 100) : 0;
+
+  // Group by category
+  const byCategory: Record<string, number> = {};
+  issues.forEach(i => {
+    byCategory[i.category] = (byCategory[i.category] || 0) + 1;
+  });
+
+  // Group by status
+  const byStatus: Record<string, number> = {};
+  issues.forEach(i => {
+    byStatus[i.status] = (byStatus[i.status] || 0) + 1;
+  });
+
+  // Group by district
+  const byDistrict: Record<string, number> = {};
+  issues.forEach(i => {
+    const district = i.location?.district || 'Unknown';
+    byDistrict[district] = (byDistrict[district] || 0) + 1;
+  });
+
+  // Group by month (last 6 months)
+  const byMonth: { month: string; submitted: number; resolved: number }[] = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = date.toLocaleString('en', { month: 'short', year: '2-digit' });
+    const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+    const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+
+    const submitted = issues.filter(issue =>
+      issue.createdAt >= monthStart && issue.createdAt <= monthEnd
+    ).length;
+
+    const resolved = issues.filter(issue =>
+      issue.resolvedAt && issue.resolvedAt >= monthStart && issue.resolvedAt <= monthEnd
+    ).length;
+
+    byMonth.push({ month: monthKey, submitted, resolved });
+  }
+
+  // Recent activity (last 7 days)
+  const recentActivity: { date: string; count: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateKey = date.toLocaleDateString('en', { weekday: 'short' });
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+
+    const count = issues.filter(issue =>
+      issue.createdAt >= dayStart && issue.createdAt < dayEnd
+    ).length;
+
+    recentActivity.push({ date: dateKey, count });
+  }
+
+  return {
+    totalIssues,
+    resolvedIssues,
+    pendingIssues,
+    rejectedIssues,
+    avgResolutionDays: Math.round(avgResolutionDays * 10) / 10,
+    resolutionRate,
+    byCategory,
+    byStatus,
+    byDistrict,
+    byMonth,
+    recentActivity,
+  };
+}
+
+// Export issues to CSV
+export function exportIssuesToCSV(issues: Issue[]): string {
+  const headers = [
+    'ID',
+    'Title',
+    'Description',
+    'Category',
+    'Status',
+    'Priority',
+    'District',
+    'Constituency',
+    'Address',
+    'Submitter Phone',
+    'Assigned To',
+    'Resolution Notes',
+    'Created At',
+    'Resolved At',
+  ];
+
+  const rows = issues.map(issue => [
+    issue.id,
+    `"${(issue.title || '').replace(/"/g, '""')}"`,
+    `"${(issue.description || '').replace(/"/g, '""')}"`,
+    issue.category,
+    issue.status,
+    issue.priority || '',
+    issue.location?.district || '',
+    issue.location?.constituency || '',
+    `"${(issue.location?.address || '').replace(/"/g, '""')}"`,
+    issue.submitterPhone || '',
+    issue.assignedTo || '',
+    `"${(issue.resolutionNotes || '').replace(/"/g, '""')}"`,
+    issue.createdAt.toISOString(),
+    issue.resolvedAt?.toISOString() || '',
+  ]);
+
+  return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 }

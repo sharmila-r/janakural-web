@@ -29,20 +29,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Auth state changed:', firebaseUser?.uid, firebaseUser?.phoneNumber);
       setUser(firebaseUser);
 
       if (firebaseUser && firebaseUser.phoneNumber) {
         // Check if user is an admin by phone number
         try {
+          console.log('Checking admin status for phone:', firebaseUser.phoneNumber);
           const usersRef = collection(db, COLLECTIONS.USERS);
           const q = query(usersRef, where('phone', '==', firebaseUser.phoneNumber));
           const snapshot = await getDocs(q);
 
+          console.log('Admin query result - empty?', snapshot.empty, 'size:', snapshot.size);
+
           if (!snapshot.empty) {
             const userDoc = snapshot.docs[0];
             const userData = userDoc.data();
+            console.log('Found user data:', userData);
             const adminRoles = ['booth_agent', 'constituency_head', 'district_leader', 'state_admin', 'super_admin'];
             if (adminRoles.includes(userData.role)) {
+              console.log('User is admin with role:', userData.role);
               setAdminUser({
                 uid: firebaseUser.uid,
                 phone: userData.phone,
@@ -50,9 +56,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 role: userData.role,
               });
             } else {
+              console.log('User role not in admin roles:', userData.role);
               setAdminUser(null);
             }
           } else {
+            console.log('No user document found for phone:', firebaseUser.phoneNumber);
             setAdminUser(null);
           }
         } catch (error) {
@@ -60,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAdminUser(null);
         }
       } else {
+        console.log('No phone number on user');
         setAdminUser(null);
       }
 

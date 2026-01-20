@@ -16,7 +16,7 @@ const notoSansTamil = Noto_Sans_Tamil({
 });
 
 export const metadata: Metadata = {
-  title: "ஜனகுரல் | Janakural - Your Voice, Our Action",
+  title: "சனகுரல் | Janakural - Your Voice, Our Action",
   description: "Report civic issues in your area and track their resolution. உங்கள் பகுதியில் உள்ள பிரச்சனைகளை புகாரளியுங்கள்.",
 };
 

@@ -38,10 +38,10 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
-              <span className="text-white font-bold text-lg">ஜ</span>
+              <span className="text-white font-bold text-lg">ச</span>
             </div>
             <div>
-              <h1 className="font-bold text-gray-900">{t('ஜனகுரல்', 'Janakural')}</h1>
+              <h1 className="font-bold text-gray-900">{t('சனகுரல்', 'Janakural')}</h1>
               <p className="text-xs text-gray-500">{t('உங்கள் குரல்', 'Your Voice')}</p>
             </div>
           </div>
@@ -57,7 +57,7 @@ export default function HomePage() {
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-red-600 via-red-500 to-red-400 text-white px-4 pt-8 pb-16">
         <div className="max-w-7xl mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-2">{t('ஜனகுரல்', 'Janakural')}</h2>
+          <h2 className="text-3xl font-bold mb-2">{t('சனகுரல்', 'Janakural')}</h2>
           <p className="text-red-100 text-lg mb-8">{t('உங்கள் குரல், எங்கள் செயல்', 'Your Voice, Our Action')}</p>
 
           <Link
