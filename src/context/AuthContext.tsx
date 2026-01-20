@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { COLLECTIONS } from '@/lib/constants';
 
@@ -31,11 +31,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
 
-      if (firebaseUser) {
-        // Check if user is an admin
+      if (firebaseUser && firebaseUser.phoneNumber) {
+        // Check if user is an admin by phone number
         try {
-          const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
-          if (userDoc.exists()) {
+          const usersRef = collection(db, COLLECTIONS.USERS);
+          const q = query(usersRef, where('phone', '==', firebaseUser.phoneNumber));
+          const snapshot = await getDocs(q);
+
+          if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
             const userData = userDoc.data();
             const adminRoles = ['booth_agent', 'constituency_head', 'district_leader', 'state_admin', 'super_admin'];
             if (adminRoles.includes(userData.role)) {
