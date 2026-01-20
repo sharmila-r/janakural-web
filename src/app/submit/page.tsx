@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
-import { CATEGORIES } from '@/lib/constants';
+import { CATEGORIES, DISTRICTS, getPanchayatUnions } from '@/lib/constants';
 import { submitIssue } from '@/services/issues';
 
 function SubmitForm() {
@@ -19,6 +19,8 @@ function SubmitForm() {
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [phone, setPhone] = useState('');
+  const [district, setDistrict] = useState('');
+  const [panchayatUnion, setPanchayatUnion] = useState('');
   const [location, setLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -87,10 +89,13 @@ function SubmitForm() {
   };
 
   const handleSubmit = async () => {
-    if (!category || !title || !phone || photos.length === 0) return;
+    if (!category || !title || !phone || photos.length === 0 || !district) return;
 
     setSubmitting(true);
     try {
+      const selectedDistrict = DISTRICTS.find(d => d.id === district);
+      const selectedPanchayat = getPanchayatUnions(district).find(p => p.id === panchayatUnion);
+
       const id = await submitIssue({
         title,
         description,
@@ -100,12 +105,15 @@ function SubmitForm() {
           longitude: location?.longitude || 0,
           address: location?.address || '',
           state: 'Tamil Nadu',
-          district: '',
-          constituency: '',
+          district: selectedDistrict?.nameEn || district,
+          constituency: selectedPanchayat?.nameEn || panchayatUnion,
           booth: '',
         },
         submitterPhone: phone,
         photos,
+        // Pass district and panchayatUnion IDs for auto-assignment
+        districtId: district,
+        panchayatUnionId: panchayatUnion,
       });
       setIssueId(id);
       setSubmitted(true);
@@ -325,9 +333,52 @@ function SubmitForm() {
               />
             </div>
 
+            {/* District Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {t('இடம்', 'Location')}
+                {t('மாவட்டம்', 'District')} *
+              </label>
+              <select
+                value={district}
+                onChange={(e) => {
+                  setDistrict(e.target.value);
+                  setPanchayatUnion('');
+                }}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              >
+                <option value="">{t('மாவட்டத்தைத் தேர்ந்தெடுக்கவும்', 'Select District')}</option>
+                {DISTRICTS.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {lang === 'ta' ? d.name : d.nameEn}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Panchayat Union Selection */}
+            {district && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('ஊராட்சி ஒன்றியம்', 'Panchayat Union')}
+                </label>
+                <select
+                  value={panchayatUnion}
+                  onChange={(e) => setPanchayatUnion(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  <option value="">{t('ஊராட்சி ஒன்றியத்தைத் தேர்ந்தெடுக்கவும்', 'Select Panchayat Union')}</option>
+                  {getPanchayatUnions(district).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {lang === 'ta' ? p.name : p.nameEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {t('GPS இடம்', 'GPS Location')}
               </label>
               <div className="bg-gray-100 rounded-xl p-4">
                 {locationLoading ? (
@@ -386,7 +437,7 @@ function SubmitForm() {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={submitting || !phone}
+                disabled={submitting || !phone || !district}
                 className="flex-1 bg-red-600 text-white rounded-xl py-3 font-semibold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {submitting ? (

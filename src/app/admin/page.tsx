@@ -11,9 +11,10 @@ import { DashboardStats } from '@/types';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const { user, adminUser, loading, isAdmin } = useAuth();
+  const { user, adminUser, loading, isAdmin, requestNotificationPermission } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [notificationStatus, setNotificationStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
@@ -36,6 +37,22 @@ export default function AdminDashboardPage() {
       fetchStats();
     }
   }, [isAdmin]);
+
+  // Check notification permission status
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationStatus(Notification.permission as 'prompt' | 'granted' | 'denied');
+    } else {
+      setNotificationStatus('unsupported');
+    }
+  }, []);
+
+  const handleEnableNotifications = async () => {
+    await requestNotificationPermission();
+    if ('Notification' in window) {
+      setNotificationStatus(Notification.permission as 'prompt' | 'granted' | 'denied');
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -72,6 +89,38 @@ export default function AdminDashboardPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Notification Banner */}
+        {notificationStatus === 'prompt' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-medium text-blue-900">Enable Push Notifications</p>
+                <p className="text-sm text-blue-700">Get notified when new issues are reported in your area</p>
+              </div>
+            </div>
+            <button
+              onClick={handleEnableNotifications}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              Enable
+            </button>
+          </div>
+        )}
+
+        {notificationStatus === 'granted' && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-6 flex items-center space-x-2">
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-sm text-green-700">Push notifications are enabled</span>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow p-6">

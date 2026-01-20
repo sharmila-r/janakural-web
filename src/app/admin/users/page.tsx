@@ -12,9 +12,11 @@ import {
   AdminUser,
   AdminRole,
 } from '@/services/admin';
+import { DISTRICTS, getPanchayatUnions } from '@/lib/constants';
 
 const roleLabels: Record<AdminRole, string> = {
   booth_agent: 'Booth Agent',
+  panchayat_leader: 'Panchayat Union Leader',
   constituency_head: 'Constituency Head',
   district_leader: 'District Leader',
   state_admin: 'State Admin',
@@ -23,6 +25,7 @@ const roleLabels: Record<AdminRole, string> = {
 
 const roleColors: Record<AdminRole, string> = {
   booth_agent: 'bg-gray-100 text-gray-700',
+  panchayat_leader: 'bg-green-100 text-green-700',
   constituency_head: 'bg-blue-100 text-blue-700',
   district_leader: 'bg-purple-100 text-purple-700',
   state_admin: 'bg-orange-100 text-orange-700',
@@ -31,11 +34,15 @@ const roleColors: Record<AdminRole, string> = {
 
 const roles: AdminRole[] = [
   'booth_agent',
+  'panchayat_leader',
   'constituency_head',
   'district_leader',
   'state_admin',
   'super_admin',
 ];
+
+// Roles that require geographic assignment
+const rolesRequiringArea: AdminRole[] = ['panchayat_leader', 'district_leader'];
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -48,6 +55,8 @@ export default function AdminUsersPage() {
     phone: '',
     name: '',
     role: 'booth_agent' as AdminRole,
+    district: '',
+    panchayatUnion: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -78,7 +87,7 @@ export default function AdminUsersPage() {
   }, [isSuperAdmin]);
 
   const handleAdd = () => {
-    setFormData({ phone: '', name: '', role: 'booth_agent' });
+    setFormData({ phone: '', name: '', role: 'booth_agent', district: '', panchayatUnion: '' });
     setError('');
     setShowAddModal(true);
   };
@@ -88,6 +97,8 @@ export default function AdminUsersPage() {
       phone: user.phone,
       name: user.name,
       role: user.role,
+      district: user.assignedArea?.district || '',
+      panchayatUnion: user.assignedArea?.panchayatUnion || '',
     });
     setError('');
     setEditingUser(user);
@@ -97,16 +108,38 @@ export default function AdminUsersPage() {
     setError('');
     setSaving(true);
 
+    // Validate area assignment for roles that require it
+    if (rolesRequiringArea.includes(formData.role)) {
+      if (!formData.district) {
+        setError('District is required for this role');
+        setSaving(false);
+        return;
+      }
+      if (formData.role === 'panchayat_leader' && !formData.panchayatUnion) {
+        setError('Panchayat Union is required for Panchayat Leader role');
+        setSaving(false);
+        return;
+      }
+    }
+
+    const assignedArea = rolesRequiringArea.includes(formData.role)
+      ? {
+          district: formData.district,
+          ...(formData.role === 'panchayat_leader' && { panchayatUnion: formData.panchayatUnion }),
+        }
+      : undefined;
+
     try {
       if (editingUser) {
         // Update existing user
         await updateAdminUser(editingUser.id, {
           name: formData.name,
           role: formData.role,
+          assignedArea,
         });
         setUsers(users.map(u =>
           u.id === editingUser.id
-            ? { ...u, name: formData.name, role: formData.role }
+            ? { ...u, name: formData.name, role: formData.role, assignedArea }
             : u
         ));
         setEditingUser(null);
@@ -117,12 +150,13 @@ export default function AdminUsersPage() {
           setSaving(false);
           return;
         }
-        const userId = await createAdminUser(formData.phone, formData.name, formData.role);
+        const userId = await createAdminUser(formData.phone, formData.name, formData.role, assignedArea);
         setUsers([{
           id: userId,
           phone: formData.phone,
           name: formData.name,
           role: formData.role,
+          assignedArea,
           isActive: true,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -239,6 +273,9 @@ export default function AdminUsersPage() {
                     Role
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Assigned Area
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -262,6 +299,24 @@ export default function AdminUsersPage() {
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${roleColors[user.role]}`}>
                         {roleLabels[user.role]}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {user.assignedArea ? (
+                        <div className="text-sm">
+                          <div className="text-gray-900">
+                            {DISTRICTS.find(d => d.id === user.assignedArea?.district)?.nameEn || user.assignedArea?.district || '-'}
+                          </div>
+                          {user.assignedArea?.panchayatUnion && (
+                            <div className="text-gray-500 text-xs">
+                              {getPanchayatUnions(user.assignedArea.district || '').find(
+                                p => p.id === user.assignedArea?.panchayatUnion
+                              )?.nameEn || user.assignedArea.panchayatUnion}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
@@ -352,7 +407,13 @@ export default function AdminUsersPage() {
                 </label>
                 <select
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as AdminRole })}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    role: e.target.value as AdminRole,
+                    // Reset area when role changes
+                    district: '',
+                    panchayatUnion: '',
+                  })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 >
                   {roles.map((role) => (
@@ -362,6 +423,52 @@ export default function AdminUsersPage() {
                   ))}
                 </select>
               </div>
+
+              {/* District Selection - shown for panchayat_leader and district_leader */}
+              {rolesRequiringArea.includes(formData.role) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    District *
+                  </label>
+                  <select
+                    value={formData.district}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      district: e.target.value,
+                      panchayatUnion: '', // Reset panchayat when district changes
+                    })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  >
+                    <option value="">Select District</option>
+                    {DISTRICTS.map((district) => (
+                      <option key={district.id} value={district.id}>
+                        {district.nameEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Panchayat Union Selection - only for panchayat_leader */}
+              {formData.role === 'panchayat_leader' && formData.district && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Panchayat Union *
+                  </label>
+                  <select
+                    value={formData.panchayatUnion}
+                    onChange={(e) => setFormData({ ...formData, panchayatUnion: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  >
+                    <option value="">Select Panchayat Union</option>
+                    {getPanchayatUnions(formData.district).map((union) => (
+                      <option key={union.id} value={union.id}>
+                        {union.nameEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end space-x-3 mt-6">

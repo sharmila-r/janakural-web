@@ -3,11 +3,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, requestFcmToken, onForegroundMessage } from '@/lib/firebase';
 import { COLLECTIONS } from '@/lib/constants';
+import { saveFcmToken } from '@/services/admin';
 
 interface AdminUser {
   uid: string;
+  id: string;
   phone: string;
   name: string;
   role: string;
@@ -18,6 +20,7 @@ interface AuthContextType {
   adminUser: AdminUser | null;
   loading: boolean;
   isAdmin: boolean;
+  requestNotificationPermission: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,11 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const userDoc = snapshot.docs[0];
             const userData = userDoc.data();
             console.log('Found user data:', userData);
-            const adminRoles = ['booth_agent', 'constituency_head', 'district_leader', 'state_admin', 'super_admin'];
+            const adminRoles = ['booth_agent', 'panchayat_leader', 'constituency_head', 'district_leader', 'state_admin', 'super_admin'];
             if (adminRoles.includes(userData.role)) {
               console.log('User is admin with role:', userData.role);
               setAdminUser({
                 uid: firebaseUser.uid,
+                id: userDoc.id,
                 phone: userData.phone,
                 name: userData.name,
                 role: userData.role,
@@ -78,10 +82,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // Set up foreground message listener
+  useEffect(() => {
+    if (adminUser) {
+      onForegroundMessage((payload) => {
+        console.log('Foreground message received:', payload);
+        // Show toast notification or update UI
+        const notification = payload as { notification?: { title?: string; body?: string } };
+        if (notification.notification?.title) {
+          // Create a browser notification for foreground messages
+          if (Notification.permission === 'granted') {
+            new Notification(notification.notification.title, {
+              body: notification.notification.body || '',
+              icon: '/icon-192.png',
+            });
+          }
+        }
+      });
+    }
+  }, [adminUser]);
+
   const isAdmin = adminUser !== null;
 
+  // Request notification permission and save FCM token
+  const requestNotificationPermission = async () => {
+    if (!adminUser) return;
+
+    try {
+      const token = await requestFcmToken();
+      if (token) {
+        await saveFcmToken(adminUser.id, token);
+        console.log('FCM token saved successfully');
+      }
+    } catch (error) {
+      console.error('Error requesting notification permission:', error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, adminUser, loading, isAdmin }}>
+    <AuthContext.Provider value={{ user, adminUser, loading, isAdmin, requestNotificationPermission }}>
       {children}
     </AuthContext.Provider>
   );

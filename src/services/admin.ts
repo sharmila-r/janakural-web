@@ -16,13 +16,19 @@ import { COLLECTIONS, getIssuePhotoPath } from '@/lib/constants';
 import { Issue, IssueStatus } from '@/types';
 
 // Admin user types
-export type AdminRole = 'booth_agent' | 'constituency_head' | 'district_leader' | 'state_admin' | 'super_admin';
+export type AdminRole = 'booth_agent' | 'panchayat_leader' | 'constituency_head' | 'district_leader' | 'state_admin' | 'super_admin';
 
 export interface AdminUser {
   id: string;
   phone: string;
   name: string;
   role: AdminRole;
+  assignedArea?: {
+    district?: string;
+    panchayatUnion?: string;
+    constituency?: string;
+  };
+  fcmToken?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -162,6 +168,8 @@ export async function getAllAdminUsers(): Promise<AdminUser[]> {
       phone: data.phone,
       name: data.name,
       role: data.role,
+      assignedArea: data.assignedArea,
+      fcmToken: data.fcmToken,
       isActive: data.isActive ?? true,
       createdAt: data.createdAt?.toDate() || new Date(),
       updatedAt: data.updatedAt?.toDate() || new Date(),
@@ -186,6 +194,8 @@ export async function getAdminUser(userId: string): Promise<AdminUser | null> {
     phone: data.phone,
     name: data.name,
     role: data.role,
+    assignedArea: data.assignedArea,
+    fcmToken: data.fcmToken,
     isActive: data.isActive ?? true,
     createdAt: data.createdAt?.toDate() || new Date(),
     updatedAt: data.updatedAt?.toDate() || new Date(),
@@ -196,7 +206,8 @@ export async function getAdminUser(userId: string): Promise<AdminUser | null> {
 export async function createAdminUser(
   phone: string,
   name: string,
-  role: AdminRole
+  role: AdminRole,
+  assignedArea?: { district?: string; panchayatUnion?: string; constituency?: string }
 ): Promise<string> {
   // Use phone number (without +) as document ID
   const userId = phone.replace(/\+/g, '');
@@ -208,14 +219,20 @@ export async function createAdminUser(
     throw new Error('User with this phone number already exists');
   }
 
-  await setDoc(userRef, {
+  const userData: Record<string, unknown> = {
     phone,
     name,
     role,
     isActive: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (assignedArea) {
+    userData.assignedArea = assignedArea;
+  }
+
+  await setDoc(userRef, userData);
 
   return userId;
 }
@@ -223,7 +240,7 @@ export async function createAdminUser(
 // Update admin user
 export async function updateAdminUser(
   userId: string,
-  updates: Partial<Pick<AdminUser, 'name' | 'role' | 'isActive'>>
+  updates: Partial<Pick<AdminUser, 'name' | 'role' | 'isActive' | 'assignedArea' | 'fcmToken'>>
 ): Promise<void> {
   const userRef = doc(db, COLLECTIONS.USERS, userId);
 
@@ -387,4 +404,76 @@ export function exportIssuesToCSV(issues: Issue[]): string {
   ]);
 
   return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+}
+
+// ============ Location-based Admin Functions ============
+
+// Find admins by district
+export async function getAdminsByDistrict(district: string): Promise<AdminUser[]> {
+  const users = await getAllAdminUsers();
+  return users.filter(u =>
+    u.isActive &&
+    u.role === 'district_leader' &&
+    u.assignedArea?.district === district
+  );
+}
+
+// Find admins by panchayat union
+export async function getAdminsByPanchayatUnion(district: string, panchayatUnion: string): Promise<AdminUser[]> {
+  const users = await getAllAdminUsers();
+  return users.filter(u =>
+    u.isActive &&
+    u.role === 'panchayat_leader' &&
+    u.assignedArea?.district === district &&
+    u.assignedArea?.panchayatUnion === panchayatUnion
+  );
+}
+
+// Get admins to notify for a new issue based on location
+export async function getAdminsForNotification(
+  district: string,
+  panchayatUnion: string
+): Promise<AdminUser[]> {
+  const users = await getAllAdminUsers();
+
+  // Find panchayat leader for this area
+  const panchayatLeaders = users.filter(u =>
+    u.isActive &&
+    u.role === 'panchayat_leader' &&
+    u.assignedArea?.district === district &&
+    u.assignedArea?.panchayatUnion === panchayatUnion
+  );
+
+  // Find district leader for this area
+  const districtLeaders = users.filter(u =>
+    u.isActive &&
+    u.role === 'district_leader' &&
+    u.assignedArea?.district === district
+  );
+
+  // Also include state admins and super admins
+  const stateAdmins = users.filter(u =>
+    u.isActive &&
+    (u.role === 'state_admin' || u.role === 'super_admin')
+  );
+
+  return [...panchayatLeaders, ...districtLeaders, ...stateAdmins];
+}
+
+// Save FCM token for admin
+export async function saveFcmToken(userId: string, fcmToken: string): Promise<void> {
+  const userRef = doc(db, COLLECTIONS.USERS, userId);
+  await updateDoc(userRef, {
+    fcmToken,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Get FCM tokens for admins
+export async function getFcmTokensForAdmins(adminIds: string[]): Promise<string[]> {
+  const users = await getAllAdminUsers();
+  return users
+    .filter(u => adminIds.includes(u.id) && u.fcmToken)
+    .map(u => u.fcmToken!)
+    .filter(Boolean);
 }

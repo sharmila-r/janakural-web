@@ -167,6 +167,8 @@ export async function submitIssue(issueData: {
   };
   submitterPhone: string;
   photos: File[];
+  districtId?: string;
+  panchayatUnionId?: string;
 }): Promise<string> {
   // First create the issue document to get ID
   const issueRef = await addDoc(collection(db, COLLECTIONS.ISSUES), {
@@ -180,6 +182,9 @@ export async function submitIssue(issueData: {
     priority: 'medium',
     beforePhotos: [],
     afterPhotos: [],
+    // Store district and panchayat IDs for auto-assignment
+    districtId: issueData.districtId || '',
+    panchayatUnionId: issueData.panchayatUnionId || '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -196,5 +201,38 @@ export async function submitIssue(issueData: {
     beforePhotos: photoUrls,
   });
 
+  // Trigger notification to relevant admins (async, don't wait)
+  if (issueData.districtId) {
+    notifyAdminsOfNewIssue(
+      issueRef.id,
+      issueData.title,
+      issueData.districtId,
+      issueData.panchayatUnionId || ''
+    ).catch(console.error);
+  }
+
   return issueRef.id;
+}
+
+// Notify admins of new issue (stores notification for FCM to pick up)
+async function notifyAdminsOfNewIssue(
+  issueId: string,
+  title: string,
+  districtId: string,
+  panchayatUnionId: string
+): Promise<void> {
+  try {
+    // Store notification in Firestore for Cloud Function to process
+    await addDoc(collection(db, COLLECTIONS.NOTIFICATIONS), {
+      type: 'new_issue',
+      issueId,
+      title,
+      districtId,
+      panchayatUnionId,
+      processed: false,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
 }

@@ -1,6 +1,7 @@
 export type UserRole =
   | 'citizen'
   | 'booth_agent'
+  | 'panchayat_leader'
   | 'constituency_head'
   | 'district_leader'
   | 'state_admin'
