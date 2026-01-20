@@ -1,17 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
-
-declare global {
-  interface Window {
-    recaptchaVerifier: RecaptchaVerifier;
-    confirmationResult: ConfirmationResult;
-  }
-}
 
 const countryCodes = [
   { code: '+1', country: 'US/CA', maxLength: 10 },
@@ -32,6 +25,9 @@ export default function AdminLoginPage() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
 
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+
   const selectedCountry = countryCodes.find(c => c.code === countryCode) || countryCodes[0];
 
   useEffect(() => {
@@ -41,10 +37,12 @@ export default function AdminLoginPage() {
   }, [user, isAdmin, loading, router]);
 
   const setupRecaptcha = () => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+    if (!recaptchaVerifierRef.current) {
+      recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
         size: 'invisible',
-        callback: () => {},
+        callback: () => {
+          console.log('reCAPTCHA verified');
+        },
       });
     }
   };
@@ -57,19 +55,30 @@ export default function AdminLoginPage() {
     try {
       setupRecaptcha();
       const formattedPhone = `${countryCode}${phone}`;
-      const confirmationResult = await signInWithPhoneNumber(
+      console.log('Sending OTP to:', formattedPhone);
+
+      const result = await signInWithPhoneNumber(
         auth,
         formattedPhone,
-        window.recaptchaVerifier
+        recaptchaVerifierRef.current!
       );
-      window.confirmationResult = confirmationResult;
+      confirmationResultRef.current = result;
+      console.log('OTP sent successfully');
       setStep('otp');
     } catch (err: unknown) {
       console.error('Error sending OTP:', err);
-      setError('Failed to send OTP. Please try again.');
-      if (window.recaptchaVerifier) {
-        window.recaptchaVerifier.clear();
-        window.recaptchaVerifier = undefined as unknown as RecaptchaVerifier;
+      const firebaseError = err as { code?: string; message?: string };
+      if (firebaseError.code === 'auth/invalid-phone-number') {
+        setError('Invalid phone number format.');
+      } else if (firebaseError.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please try again later.');
+      } else {
+        setError('Failed to send OTP. Please try again.');
+      }
+      // Reset reCAPTCHA on error
+      if (recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current.clear();
+        recaptchaVerifierRef.current = null;
       }
     } finally {
       setSending(false);
@@ -79,14 +88,34 @@ export default function AdminLoginPage() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!confirmationResultRef.current) {
+      setError('Session expired. Please request a new OTP.');
+      setStep('phone');
+      setOtp('');
+      return;
+    }
+
     setVerifying(true);
 
     try {
-      await window.confirmationResult.confirm(otp);
+      console.log('Verifying OTP:', otp);
+      await confirmationResultRef.current.confirm(otp);
+      console.log('OTP verified successfully');
       // Auth state will update and useEffect will redirect if admin
     } catch (err) {
       console.error('Error verifying OTP:', err);
-      setError('Invalid OTP. Please try again.');
+      const firebaseError = err as { code?: string };
+      if (firebaseError.code === 'auth/code-expired') {
+        setError('OTP expired. Please request a new one.');
+        setStep('phone');
+        setOtp('');
+        confirmationResultRef.current = null;
+      } else if (firebaseError.code === 'auth/invalid-verification-code') {
+        setError('Invalid OTP. Please check and try again.');
+      } else {
+        setError('Verification failed. Please try again.');
+      }
     } finally {
       setVerifying(false);
     }
