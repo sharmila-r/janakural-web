@@ -139,7 +139,7 @@ export default function AdminLoginPage() {
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                  placeholder={countryCode === '+1' ? '7742769594' : '9876543210'}
+                  placeholder="1234567890"
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   maxLength={selectedCountry.maxLength}
                 />
