@@ -43,12 +43,27 @@ export default function HomePage() {
               <p className="text-xs text-gray-500">{t('உங்கள் குரல்', 'Your Voice')}</p>
             </div>
           </div>
-          <button
-            onClick={() => setLang(lang === 'ta' ? 'en' : 'ta')}
-            className="px-3 py-1 text-sm border border-gray-300 rounded-full hover:bg-gray-50"
-          >
-            {lang === 'ta' ? 'EN' : 'தமிழ்'}
-          </button>
+          <div className="flex items-center space-x-2">
+            {/* Navigation Links */}
+            <Link
+              href="/submit"
+              className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-full hover:bg-red-700 font-medium"
+            >
+              {t('புகார்', 'Report')}
+            </Link>
+            <Link
+              href="/my-issues"
+              className="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-full hover:bg-gray-50 font-medium"
+            >
+              {t('என் புகார்', 'My Issues')}
+            </Link>
+            <button
+              onClick={() => setLang(lang === 'ta' ? 'en' : 'ta')}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-full hover:bg-gray-50"
+            >
+              {lang === 'ta' ? 'EN' : 'தமிழ்'}
+            </button>
+          </div>
         </div>
       </header>
 

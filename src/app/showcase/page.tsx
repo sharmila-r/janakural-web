@@ -42,15 +42,31 @@ export default function ShowcasePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center">
-          <Link href="/" className="mr-4">
-            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div>
-            <h1 className="font-bold text-gray-900">{t('நாங்கள் சரி செய்தோம்', 'We Fixed This')}</h1>
-            <p className="text-xs text-gray-500">{t('தீர்க்கப்பட்ட பிரச்சனைகள்', 'Resolved Issues')}</p>
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center">
+            <Link href="/" className="mr-4">
+              <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+            <div>
+              <h1 className="font-bold text-gray-900">{t('நாங்கள் சரி செய்தோம்', 'We Fixed This')}</h1>
+              <p className="text-xs text-gray-500">{t('தீர்க்கப்பட்ட பிரச்சனைகள்', 'Resolved Issues')}</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Link
+              href="/submit"
+              className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-full hover:bg-red-700 font-medium"
+            >
+              {t('புகார்', 'Report')}
+            </Link>
+            <Link
+              href="/my-issues"
+              className="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-full hover:bg-gray-50 font-medium"
+            >
+              {t('என் புகார்', 'My Issues')}
+            </Link>
           </div>
         </div>
       </header>
