@@ -18,6 +18,12 @@ const notoSansTamil = Noto_Sans_Tamil({
 export const metadata: Metadata = {
   title: "சனகுரல் | Janakural - Your Voice, Our Action",
   description: "Report civic issues in your area and track their resolution. உங்கள் பகுதியில் உள்ள பிரச்சனைகளை புகாரளியுங்கள்.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Janakural",
+  },
 };
 
 export default function RootLayout({

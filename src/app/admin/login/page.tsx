@@ -135,9 +135,7 @@ export default function AdminLoginPage() {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">ச</span>
-          </div>
+          <img src="/icon-192.png" alt="Janakural" className="w-16 h-16 rounded-xl mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900">Admin Login</h1>
           <p className="text-gray-500 mt-1">Janakural Administration</p>
         </div>
