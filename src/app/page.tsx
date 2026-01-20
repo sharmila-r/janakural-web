@@ -52,11 +52,19 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-red-600 via-red-500 to-red-400 text-white px-4 pt-8 pb-16">
-        <div className="max-w-7xl mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-2">{t('சனகுரல்', 'Janakural')}</h2>
-          <p className="text-red-100 text-lg mb-8">{t('உங்கள் குரல், எங்கள் செயல்', 'Your Voice, Our Action')}</p>
+      {/* Hero Section with TVK background */}
+      <section className="relative text-white px-4 pt-8 pb-16 overflow-hidden">
+        {/* Background Image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/tvk-hero.jpg')" }}
+        />
+        {/* Overlay for text readability */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70" />
+
+        <div className="max-w-7xl mx-auto text-center relative z-10">
+          <h2 className="text-3xl font-bold mb-2 drop-shadow-lg">{t('சனகுரல்', 'Janakural')}</h2>
+          <p className="text-white/90 text-lg mb-8 drop-shadow">{t('உங்கள் குரல், எங்கள் செயல்', 'Your Voice, Our Action')}</p>
 
           <Link
             href="/submit"
