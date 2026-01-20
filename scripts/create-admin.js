@@ -9,7 +9,7 @@ initializeApp({
 const db = getFirestore();
 
 async function createAdminUser() {
-  const phone = '+919876543210';
+  const phone = '+17742769594';
   const userId = phone.replace(/\+/g, '');
 
   const adminData = {

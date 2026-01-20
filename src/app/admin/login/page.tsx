@@ -13,15 +13,26 @@ declare global {
   }
 }
 
+const countryCodes = [
+  { code: '+1', country: 'US/CA', maxLength: 10 },
+  { code: '+91', country: 'IN', maxLength: 10 },
+  { code: '+44', country: 'UK', maxLength: 10 },
+  { code: '+61', country: 'AU', maxLength: 9 },
+  { code: '+65', country: 'SG', maxLength: 8 },
+];
+
 export default function AdminLoginPage() {
   const router = useRouter();
   const { user, isAdmin, loading } = useAuth();
+  const [countryCode, setCountryCode] = useState('+1');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
+
+  const selectedCountry = countryCodes.find(c => c.code === countryCode) || countryCodes[0];
 
   useEffect(() => {
     if (!loading && user && isAdmin) {
@@ -45,7 +56,7 @@ export default function AdminLoginPage() {
 
     try {
       setupRecaptcha();
-      const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+      const formattedPhone = `${countryCode}${phone}`;
       const confirmationResult = await signInWithPhoneNumber(
         auth,
         formattedPhone,
@@ -113,23 +124,31 @@ export default function AdminLoginPage() {
                 Phone Number
               </label>
               <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
-                  +91
-                </span>
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="px-3 py-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-gray-700 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  {countryCodes.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} ({c.country})
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                  placeholder="98765 43210"
+                  placeholder={countryCode === '+1' ? '7742769594' : '9876543210'}
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                  maxLength={10}
+                  maxLength={selectedCountry.maxLength}
                 />
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={sending || phone.length < 10}
+              disabled={sending || phone.length < selectedCountry.maxLength}
               className="w-full bg-red-600 text-white rounded-xl py-3 font-semibold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {sending ? (
@@ -157,7 +176,7 @@ export default function AdminLoginPage() {
                 maxLength={6}
               />
               <p className="text-sm text-gray-500 mt-2">
-                OTP sent to +91{phone}
+                OTP sent to {countryCode}{phone}
               </p>
             </div>
 
