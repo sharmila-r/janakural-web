@@ -215,7 +215,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="bg-red-600 text-white text-center py-8">
         <p className="text-red-100 text-sm">{t('இயக்குவோர்', 'Powered by')}</p>
-        <h3 className="text-xl font-bold mt-1">{t('தமிழக வெற்றி கழகம்', 'Tamilaga Vettri Kazhagam')}</h3>
+        <h3 className="text-xl font-bold mt-1">{t('தமிழக வெற்றிக் கழகம்', 'Tamilaga Vettri Kazhagam')}</h3>
       </footer>
 
       {/* Bottom Navigation */}
